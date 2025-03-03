@@ -10,6 +10,7 @@ from backend.data.model import (
     CredentialsMetaInput,
     SchemaField,
 )
+from backend.integrations.providers import ProviderName
 from backend.util.request import requests
 
 TEST_CREDENTIALS = APIKeyCredentials(
@@ -29,13 +30,11 @@ TEST_CREDENTIALS_INPUT = {
 
 class CreateTalkingAvatarVideoBlock(Block):
     class Input(BlockSchema):
-        credentials: CredentialsMetaInput[Literal["d_id"], Literal["api_key"]] = (
-            CredentialsField(
-                provider="d_id",
-                supported_credential_types={"api_key"},
-                description="The D-ID integration can be used with "
-                "any API key with sufficient permissions for the blocks it is used on.",
-            )
+        credentials: CredentialsMetaInput[
+            Literal[ProviderName.D_ID], Literal["api_key"]
+        ] = CredentialsField(
+            description="The D-ID integration can be used with "
+            "any API key with sufficient permissions for the blocks it is used on.",
         )
         script_input: str = SchemaField(
             description="The text input for the script",
@@ -79,7 +78,7 @@ class CreateTalkingAvatarVideoBlock(Block):
         super().__init__(
             id="98c6f503-8c47-4b1c-a96d-351fc7c87dab",
             description="This block integrates with D-ID to create video clips and retrieve their URLs.",
-            categories={BlockCategory.AI},
+            categories={BlockCategory.AI, BlockCategory.MULTIMEDIA},
             input_schema=CreateTalkingAvatarVideoBlock.Input,
             output_schema=CreateTalkingAvatarVideoBlock.Output,
             test_input={

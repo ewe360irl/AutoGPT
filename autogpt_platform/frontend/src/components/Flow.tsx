@@ -26,7 +26,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { CustomNode } from "./CustomNode";
 import "./flow.css";
-import { BlockUIType, Link } from "@/lib/autogpt-server-api";
+import { BlockUIType, formatEdgeID, GraphID } from "@/lib/autogpt-server-api";
 import { getTypeColor, findNewlyAddedBlockCoordinates } from "@/lib/utils";
 import { history } from "./history";
 import { CustomEdge } from "./CustomEdge";
@@ -69,10 +69,10 @@ export type NodeDimension = {
 export const FlowContext = createContext<FlowContextType | null>(null);
 
 const FlowEditor: React.FC<{
-  flowID?: string;
-  template?: boolean;
+  flowID?: GraphID;
+  flowVersion?: string;
   className?: string;
-}> = ({ flowID, template, className }) => {
+}> = ({ flowID, flowVersion, className }) => {
   const {
     addNodes,
     addEdges,
@@ -86,6 +86,7 @@ const FlowEditor: React.FC<{
   const [visualizeBeads, setVisualizeBeads] = useState<
     "no" | "static" | "animate"
   >("animate");
+  const [flowExecutionID, setFlowExecutionID] = useState<string | undefined>();
   const {
     agentName,
     setAgentName,
@@ -99,14 +100,21 @@ const FlowEditor: React.FC<{
     requestSaveAndRun,
     requestStopRun,
     scheduleRunner,
+    isSaving,
     isRunning,
+    isStopping,
     isScheduling,
     setIsScheduling,
     nodes,
     setNodes,
     edges,
     setEdges,
-  } = useAgentGraph(flowID, template, visualizeBeads !== "no");
+  } = useAgentGraph(
+    flowID,
+    flowVersion ? parseInt(flowVersion) : undefined,
+    flowExecutionID,
+    visualizeBeads !== "no",
+  );
 
   const router = useRouter();
   const pathname = usePathname();
@@ -156,6 +164,7 @@ const FlowEditor: React.FC<{
     if (params.get("open_scheduling") === "true") {
       setOpenCron(true);
     }
+    setFlowExecutionID(params.get("flowExecutionID") || undefined);
   }, [params]);
 
   useEffect(() => {
@@ -249,7 +258,7 @@ const FlowEditor: React.FC<{
           if (deletedNodeData) {
             history.push({
               type: "DELETE_NODE",
-              payload: { node: deletedNodeData },
+              payload: { node: deletedNodeData.data },
               undo: () => addNodes(deletedNodeData),
               redo: () => deleteElements({ nodes: [{ id: nodeID }] }),
             });
@@ -265,14 +274,6 @@ const FlowEditor: React.FC<{
     },
     [deleteElements, setNodes, nodes, edges, addNodes],
   );
-
-  const formatEdgeID = useCallback((conn: Link | Connection): string => {
-    if ("sink_id" in conn) {
-      return `${conn.source_id}_${conn.source_name}_${conn.sink_id}_${conn.sink_name}`;
-    } else {
-      return `${conn.source}_${conn.sourceHandle}_${conn.target}_${conn.targetHandle}`;
-    }
-  }, []);
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
@@ -659,11 +660,12 @@ const FlowEditor: React.FC<{
           onNodeDragStop={onNodeDragEnd}
           onNodeDragStart={onNodeDragStart}
           deleteKeyCode={["Backspace", "Delete"]}
-          minZoom={0.2}
+          minZoom={0.1}
           maxZoom={2}
+          className="dark:bg-slate-900"
         >
           <Controls />
-          <Background />
+          <Background className="dark:bg-slate-800" />
           <ControlPanel
             className="absolute z-10"
             controls={editorControls}
@@ -673,12 +675,14 @@ const FlowEditor: React.FC<{
                 blocks={availableNodes}
                 addBlock={addNode}
                 flows={availableFlows}
+                nodes={nodes}
               />
             }
             botChildren={
               <SaveControl
                 agentMeta={savedAgent}
-                onSave={(isTemplate) => requestSave(isTemplate ?? false)}
+                canSave={!isSaving && !isRunning && !isStopping}
+                onSave={() => requestSave()}
                 agentDescription={agentDescription}
                 onDescriptionChange={setAgentDescription}
                 agentName={agentName}

@@ -1,3 +1,5 @@
+import re
+
 from typing_extensions import TypedDict
 
 from backend.data.block import Block, BlockCategory, BlockOutput, BlockSchema
@@ -198,6 +200,7 @@ class GithubReadPullRequestBlock(Block):
         include_pr_changes: bool = SchemaField(
             description="Whether to include the changes made in the pull request",
             default=False,
+            advanced=False,
         )
 
     class Output(BlockSchema):
@@ -253,7 +256,7 @@ class GithubReadPullRequestBlock(Block):
     @staticmethod
     def read_pr_changes(credentials: GithubCredentials, pr_url: str) -> str:
         api = get_api(credentials)
-        files_url = pr_url + "/files"
+        files_url = prepare_pr_api_url(pr_url=pr_url, path="files")
         response = api.get(files_url)
         files = response.json()
         changes = []
@@ -331,7 +334,7 @@ class GithubAssignPRReviewerBlock(Block):
         credentials: GithubCredentials, pr_url: str, reviewer: str
     ) -> str:
         api = get_api(credentials)
-        reviewers_url = pr_url + "/requested_reviewers"
+        reviewers_url = prepare_pr_api_url(pr_url=pr_url, path="requested_reviewers")
         data = {"reviewers": [reviewer]}
         api.post(reviewers_url, json=data)
         return "Reviewer assigned successfully"
@@ -398,7 +401,7 @@ class GithubUnassignPRReviewerBlock(Block):
         credentials: GithubCredentials, pr_url: str, reviewer: str
     ) -> str:
         api = get_api(credentials)
-        reviewers_url = pr_url + "/requested_reviewers"
+        reviewers_url = prepare_pr_api_url(pr_url=pr_url, path="requested_reviewers")
         data = {"reviewers": [reviewer]}
         api.delete(reviewers_url, json=data)
         return "Reviewer unassigned successfully"
@@ -478,7 +481,7 @@ class GithubListPRReviewersBlock(Block):
         credentials: GithubCredentials, pr_url: str
     ) -> list[Output.ReviewerItem]:
         api = get_api(credentials)
-        reviewers_url = pr_url + "/requested_reviewers"
+        reviewers_url = prepare_pr_api_url(pr_url=pr_url, path="requested_reviewers")
         response = api.get(reviewers_url)
         data = response.json()
         reviewers: list[GithubListPRReviewersBlock.Output.ReviewerItem] = [
@@ -499,3 +502,14 @@ class GithubListPRReviewersBlock(Block):
             input_data.pr_url,
         )
         yield from (("reviewer", reviewer) for reviewer in reviewers)
+
+
+def prepare_pr_api_url(pr_url: str, path: str) -> str:
+    # Pattern to capture the base repository URL and the pull request number
+    pattern = r"^(?:https?://)?([^/]+/[^/]+/[^/]+)/pull/(\d+)"
+    match = re.match(pattern, pr_url)
+    if not match:
+        return pr_url
+
+    base_url, pr_number = match.groups()
+    return f"{base_url}/pulls/{pr_number}/{path}"

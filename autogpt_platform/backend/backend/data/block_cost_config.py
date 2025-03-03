@@ -35,6 +35,8 @@ from backend.integrations.credentials_store import (
 # =============== Configure the cost for each LLM Model call =============== #
 
 MODEL_COST: dict[LlmModel, int] = {
+    LlmModel.O3_MINI: 2,  # $1.10 / $4.40
+    LlmModel.O1: 16,  # $15 / $60
     LlmModel.O1_PREVIEW: 16,
     LlmModel.O1_MINI: 4,
     LlmModel.GPT4O_MINI: 1,
@@ -42,19 +44,21 @@ MODEL_COST: dict[LlmModel, int] = {
     LlmModel.GPT4_TURBO: 10,
     LlmModel.GPT3_5_TURBO: 1,
     LlmModel.CLAUDE_3_5_SONNET: 4,
+    LlmModel.CLAUDE_3_5_HAIKU: 1,  # $0.80 / $4.00
     LlmModel.CLAUDE_3_HAIKU: 1,
     LlmModel.LLAMA3_8B: 1,
     LlmModel.LLAMA3_70B: 1,
     LlmModel.MIXTRAL_8X7B: 1,
-    LlmModel.GEMMA_7B: 1,
     LlmModel.GEMMA2_9B: 1,
-    LlmModel.LLAMA3_1_405B: 1,
-    LlmModel.LLAMA3_1_70B: 1,
+    LlmModel.LLAMA3_3_70B: 1,  # $0.59 / $0.79
     LlmModel.LLAMA3_1_8B: 1,
+    LlmModel.OLLAMA_LLAMA3_3: 1,
+    LlmModel.OLLAMA_LLAMA3_2: 1,
     LlmModel.OLLAMA_LLAMA3_8B: 1,
     LlmModel.OLLAMA_LLAMA3_405B: 1,
-    LlmModel.GEMINI_FLASH_1_5_8B: 1,
-    LlmModel.GEMINI_FLASH_1_5_EXP: 1,
+    LlmModel.DEEPSEEK_LLAMA_70B: 1,  # ? / ?
+    LlmModel.OLLAMA_DOLPHIN: 1,
+    LlmModel.GEMINI_FLASH_1_5: 1,
     LlmModel.GROK_BETA: 5,
     LlmModel.MISTRAL_NEMO: 1,
     LlmModel.COHERE_COMMAND_R_08_2024: 1,
@@ -62,6 +66,14 @@ MODEL_COST: dict[LlmModel, int] = {
     LlmModel.EVA_QWEN_2_5_32B: 1,
     LlmModel.DEEPSEEK_CHAT: 2,
     LlmModel.PERPLEXITY_LLAMA_3_1_SONAR_LARGE_128K_ONLINE: 1,
+    LlmModel.QWEN_QWQ_32B_PREVIEW: 2,
+    LlmModel.NOUSRESEARCH_HERMES_3_LLAMA_3_1_405B: 1,
+    LlmModel.NOUSRESEARCH_HERMES_3_LLAMA_3_1_70B: 1,
+    LlmModel.AMAZON_NOVA_LITE_V1: 1,
+    LlmModel.AMAZON_NOVA_MICRO_V1: 1,
+    LlmModel.AMAZON_NOVA_PRO_V1: 1,
+    LlmModel.MICROSOFT_WIZARDLM_2_8X22B: 1,
+    LlmModel.GRYPHE_MYTHOMAX_L2_13B: 1,
 }
 
 for model in LlmModel:

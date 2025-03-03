@@ -66,10 +66,17 @@ We use the Poetry to manage the dependencies. To set up the project, follow thes
 
 ### Starting the server without Docker
 
+To run the server locally, start in the autogpt_platform folder:
+
+```sh
+cd ..
+```
+
 Run the following command to run database in docker but the application locally:
 
 ```sh
 docker compose --profile local up deps --build --detach
+cd backend
 poetry run app
 ```
 
@@ -200,4 +207,4 @@ To add a new agent block, you need to create a new class that inherits from `Blo
 * `run` method: the main logic of the block.
 * `test_input` & `test_output`: the sample input and output data for the block, which will be used to auto-test the block.
 * You can mock the functions declared in the block using the `test_mock` field for your unit tests.
-* Once you finish creating the block, you can test it by running `pytest -s test/block/test_block.py`.
+* Once you finish creating the block, you can test it by running `poetry run pytest -s test/block/test_block.py`.

@@ -1,11 +1,14 @@
 import ast
 import logging
+from abc import ABC
 from enum import Enum, EnumMeta
 from json import JSONDecodeError
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
 from pydantic import SecretStr
+
+from backend.integrations.providers import ProviderName
 
 if TYPE_CHECKING:
     from enum import _EnumMemberT
@@ -24,10 +27,18 @@ from backend.data.model import (
 )
 from backend.util import json
 from backend.util.settings import BehaveAs, Settings
+from backend.util.text import TextFormatter
 
 logger = logging.getLogger(__name__)
+fmt = TextFormatter()
 
-LLMProviderName = Literal["anthropic", "groq", "openai", "ollama", "open_router"]
+LLMProviderName = Literal[
+    ProviderName.ANTHROPIC,
+    ProviderName.GROQ,
+    ProviderName.OLLAMA,
+    ProviderName.OPENAI,
+    ProviderName.OPEN_ROUTER,
+]
 AICredentials = CredentialsMetaInput[LLMProviderName, Literal["api_key"]]
 
 TEST_CREDENTIALS = APIKeyCredentials(
@@ -48,8 +59,6 @@ TEST_CREDENTIALS_INPUT = {
 def AICredentialsField() -> AICredentials:
     return CredentialsField(
         description="API key for the LLM provider.",
-        provider=["anthropic", "groq", "openai", "ollama", "open_router"],
-        supported_credential_types={"api_key"},
         discriminator="model",
         discriminator_mapping={
             model.value: model.metadata.provider for model in LlmModel
@@ -60,6 +69,7 @@ def AICredentialsField() -> AICredentials:
 class ModelMetadata(NamedTuple):
     provider: str
     context_window: int
+    max_output_tokens: int | None
 
 
 class LlmModelMeta(EnumMeta):
@@ -83,6 +93,8 @@ class LlmModelMeta(EnumMeta):
 
 class LlmModel(str, Enum, metaclass=LlmModelMeta):
     # OpenAI models
+    O3_MINI = "o3-mini"
+    O1 = "o1"
     O1_PREVIEW = "o1-preview"
     O1_MINI = "o1-mini"
     GPT4O_MINI = "gpt-4o-mini"
@@ -91,32 +103,42 @@ class LlmModel(str, Enum, metaclass=LlmModelMeta):
     GPT3_5_TURBO = "gpt-3.5-turbo"
     # Anthropic models
     CLAUDE_3_5_SONNET = "claude-3-5-sonnet-latest"
+    CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
     CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
     # Groq models
-    LLAMA3_8B = "llama3-8b-8192"
-    LLAMA3_70B = "llama3-70b-8192"
-    MIXTRAL_8X7B = "mixtral-8x7b-32768"
-    GEMMA_7B = "gemma-7b-it"
     GEMMA2_9B = "gemma2-9b-it"
-    # New Groq models (Preview)
-    LLAMA3_1_405B = "llama-3.1-405b-reasoning"
-    LLAMA3_1_70B = "llama-3.1-70b-versatile"
+    LLAMA3_3_70B = "llama-3.3-70b-versatile"
     LLAMA3_1_8B = "llama-3.1-8b-instant"
+    LLAMA3_70B = "llama3-70b-8192"
+    LLAMA3_8B = "llama3-8b-8192"
+    MIXTRAL_8X7B = "mixtral-8x7b-32768"
+    # Groq preview models
+    DEEPSEEK_LLAMA_70B = "deepseek-r1-distill-llama-70b"
     # Ollama models
+    OLLAMA_LLAMA3_3 = "llama3.3"
+    OLLAMA_LLAMA3_2 = "llama3.2"
     OLLAMA_LLAMA3_8B = "llama3"
     OLLAMA_LLAMA3_405B = "llama3.1:405b"
+    OLLAMA_DOLPHIN = "dolphin-mistral:latest"
     # OpenRouter models
-    GEMINI_FLASH_1_5_8B = "google/gemini-flash-1.5"
-    GEMINI_FLASH_1_5_EXP = "google/gemini-flash-1.5-exp"
+    GEMINI_FLASH_1_5 = "google/gemini-flash-1.5"
     GROK_BETA = "x-ai/grok-beta"
     MISTRAL_NEMO = "mistralai/mistral-nemo"
     COHERE_COMMAND_R_08_2024 = "cohere/command-r-08-2024"
     COHERE_COMMAND_R_PLUS_08_2024 = "cohere/command-r-plus-08-2024"
     EVA_QWEN_2_5_32B = "eva-unit-01/eva-qwen-2.5-32b"
-    DEEPSEEK_CHAT = "deepseek/deepseek-chat"
+    DEEPSEEK_CHAT = "deepseek/deepseek-chat"  # Actually: DeepSeek V3
     PERPLEXITY_LLAMA_3_1_SONAR_LARGE_128K_ONLINE = (
         "perplexity/llama-3.1-sonar-large-128k-online"
     )
+    QWEN_QWQ_32B_PREVIEW = "qwen/qwq-32b-preview"
+    NOUSRESEARCH_HERMES_3_LLAMA_3_1_405B = "nousresearch/hermes-3-llama-3.1-405b"
+    NOUSRESEARCH_HERMES_3_LLAMA_3_1_70B = "nousresearch/hermes-3-llama-3.1-70b"
+    AMAZON_NOVA_LITE_V1 = "amazon/nova-lite-v1"
+    AMAZON_NOVA_MICRO_V1 = "amazon/nova-micro-v1"
+    AMAZON_NOVA_PRO_V1 = "amazon/nova-pro-v1"
+    MICROSOFT_WIZARDLM_2_8X22B = "microsoft/wizardlm-2-8x22b"
+    GRYPHE_MYTHOMAX_L2_13B = "gryphe/mythomax-l2-13b"
 
     @property
     def metadata(self) -> ModelMetadata:
@@ -130,38 +152,74 @@ class LlmModel(str, Enum, metaclass=LlmModelMeta):
     def context_window(self) -> int:
         return self.metadata.context_window
 
+    @property
+    def max_output_tokens(self) -> int | None:
+        return self.metadata.max_output_tokens
+
 
 MODEL_METADATA = {
-    LlmModel.O1_PREVIEW: ModelMetadata("openai", 32000),
-    LlmModel.O1_MINI: ModelMetadata("openai", 62000),
-    LlmModel.GPT4O_MINI: ModelMetadata("openai", 128000),
-    LlmModel.GPT4O: ModelMetadata("openai", 128000),
-    LlmModel.GPT4_TURBO: ModelMetadata("openai", 128000),
-    LlmModel.GPT3_5_TURBO: ModelMetadata("openai", 16385),
-    LlmModel.CLAUDE_3_5_SONNET: ModelMetadata("anthropic", 200000),
-    LlmModel.CLAUDE_3_HAIKU: ModelMetadata("anthropic", 200000),
-    LlmModel.LLAMA3_8B: ModelMetadata("groq", 8192),
-    LlmModel.LLAMA3_70B: ModelMetadata("groq", 8192),
-    LlmModel.MIXTRAL_8X7B: ModelMetadata("groq", 32768),
-    LlmModel.GEMMA_7B: ModelMetadata("groq", 8192),
-    LlmModel.GEMMA2_9B: ModelMetadata("groq", 8192),
-    LlmModel.LLAMA3_1_405B: ModelMetadata("groq", 8192),
-    # Limited to 16k during preview
-    LlmModel.LLAMA3_1_70B: ModelMetadata("groq", 131072),
-    LlmModel.LLAMA3_1_8B: ModelMetadata("groq", 131072),
-    LlmModel.OLLAMA_LLAMA3_8B: ModelMetadata("ollama", 8192),
-    LlmModel.OLLAMA_LLAMA3_405B: ModelMetadata("ollama", 8192),
-    LlmModel.GEMINI_FLASH_1_5_8B: ModelMetadata("open_router", 8192),
-    LlmModel.GEMINI_FLASH_1_5_EXP: ModelMetadata("open_router", 8192),
-    LlmModel.GROK_BETA: ModelMetadata("open_router", 8192),
-    LlmModel.MISTRAL_NEMO: ModelMetadata("open_router", 4000),
-    LlmModel.COHERE_COMMAND_R_08_2024: ModelMetadata("open_router", 4000),
-    LlmModel.COHERE_COMMAND_R_PLUS_08_2024: ModelMetadata("open_router", 4000),
-    LlmModel.EVA_QWEN_2_5_32B: ModelMetadata("open_router", 4000),
-    LlmModel.DEEPSEEK_CHAT: ModelMetadata("open_router", 8192),
+    # https://platform.openai.com/docs/models
+    LlmModel.O3_MINI: ModelMetadata("openai", 200000, 100000),  # o3-mini-2025-01-31
+    LlmModel.O1: ModelMetadata("openai", 200000, 100000),  # o1-2024-12-17
+    LlmModel.O1_PREVIEW: ModelMetadata(
+        "openai", 128000, 32768
+    ),  # o1-preview-2024-09-12
+    LlmModel.O1_MINI: ModelMetadata("openai", 128000, 65536),  # o1-mini-2024-09-12
+    LlmModel.GPT4O_MINI: ModelMetadata(
+        "openai", 128000, 16384
+    ),  # gpt-4o-mini-2024-07-18
+    LlmModel.GPT4O: ModelMetadata("openai", 128000, 16384),  # gpt-4o-2024-08-06
+    LlmModel.GPT4_TURBO: ModelMetadata(
+        "openai", 128000, 4096
+    ),  # gpt-4-turbo-2024-04-09
+    LlmModel.GPT3_5_TURBO: ModelMetadata("openai", 16385, 4096),  # gpt-3.5-turbo-0125
+    # https://docs.anthropic.com/en/docs/about-claude/models
+    LlmModel.CLAUDE_3_5_SONNET: ModelMetadata(
+        "anthropic", 200000, 8192
+    ),  # claude-3-5-sonnet-20241022
+    LlmModel.CLAUDE_3_5_HAIKU: ModelMetadata(
+        "anthropic", 200000, 8192
+    ),  # claude-3-5-haiku-20241022
+    LlmModel.CLAUDE_3_HAIKU: ModelMetadata(
+        "anthropic", 200000, 4096
+    ),  # claude-3-haiku-20240307
+    # https://console.groq.com/docs/models
+    LlmModel.GEMMA2_9B: ModelMetadata("groq", 8192, None),
+    LlmModel.LLAMA3_3_70B: ModelMetadata("groq", 128000, 32768),
+    LlmModel.LLAMA3_1_8B: ModelMetadata("groq", 128000, 8192),
+    LlmModel.LLAMA3_70B: ModelMetadata("groq", 8192, None),
+    LlmModel.LLAMA3_8B: ModelMetadata("groq", 8192, None),
+    LlmModel.MIXTRAL_8X7B: ModelMetadata("groq", 32768, None),
+    LlmModel.DEEPSEEK_LLAMA_70B: ModelMetadata("groq", 128000, None),
+    # https://ollama.com/library
+    LlmModel.OLLAMA_LLAMA3_3: ModelMetadata("ollama", 8192, None),
+    LlmModel.OLLAMA_LLAMA3_2: ModelMetadata("ollama", 8192, None),
+    LlmModel.OLLAMA_LLAMA3_8B: ModelMetadata("ollama", 8192, None),
+    LlmModel.OLLAMA_LLAMA3_405B: ModelMetadata("ollama", 8192, None),
+    LlmModel.OLLAMA_DOLPHIN: ModelMetadata("ollama", 32768, None),
+    # https://openrouter.ai/models
+    LlmModel.GEMINI_FLASH_1_5: ModelMetadata("open_router", 1000000, 8192),
+    LlmModel.GROK_BETA: ModelMetadata("open_router", 131072, 131072),
+    LlmModel.MISTRAL_NEMO: ModelMetadata("open_router", 128000, 4096),
+    LlmModel.COHERE_COMMAND_R_08_2024: ModelMetadata("open_router", 128000, 4096),
+    LlmModel.COHERE_COMMAND_R_PLUS_08_2024: ModelMetadata("open_router", 128000, 4096),
+    LlmModel.EVA_QWEN_2_5_32B: ModelMetadata("open_router", 16384, 4096),
+    LlmModel.DEEPSEEK_CHAT: ModelMetadata("open_router", 64000, 2048),
     LlmModel.PERPLEXITY_LLAMA_3_1_SONAR_LARGE_128K_ONLINE: ModelMetadata(
-        "open_router", 8192
+        "open_router", 127072, 127072
     ),
+    LlmModel.QWEN_QWQ_32B_PREVIEW: ModelMetadata("open_router", 32768, 32768),
+    LlmModel.NOUSRESEARCH_HERMES_3_LLAMA_3_1_405B: ModelMetadata(
+        "open_router", 131000, 4096
+    ),
+    LlmModel.NOUSRESEARCH_HERMES_3_LLAMA_3_1_70B: ModelMetadata(
+        "open_router", 12288, 12288
+    ),
+    LlmModel.AMAZON_NOVA_LITE_V1: ModelMetadata("open_router", 300000, 5120),
+    LlmModel.AMAZON_NOVA_MICRO_V1: ModelMetadata("open_router", 128000, 5120),
+    LlmModel.AMAZON_NOVA_PRO_V1: ModelMetadata("open_router", 300000, 5120),
+    LlmModel.MICROSOFT_WIZARDLM_2_8X22B: ModelMetadata("open_router", 65536, 4096),
+    LlmModel.GRYPHE_MYTHOMAX_L2_13B: ModelMetadata("open_router", 4096, 4096),
 }
 
 for model in LlmModel:
@@ -180,7 +238,17 @@ class Message(BlockSchema):
     content: str
 
 
-class AIStructuredResponseGeneratorBlock(Block):
+class AIBlockBase(Block, ABC):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prompt = ""
+
+    def merge_llm_stats(self, block: "AIBlockBase"):
+        self.merge_stats(block.execution_stats)
+        self.prompt = block.prompt
+
+
+class AIStructuredResponseGeneratorBlock(AIBlockBase):
     class Input(BlockSchema):
         prompt: str = SchemaField(
             description="The prompt to send to the language model.",
@@ -212,7 +280,9 @@ class AIStructuredResponseGeneratorBlock(Block):
             description="Number of times to retry the LLM call if the response does not match the expected format.",
         )
         prompt_values: dict[str, str] = SchemaField(
-            advanced=False, default={}, description="Values used to fill in the prompt."
+            advanced=False,
+            default={},
+            description="Values used to fill in the prompt. The values can be used in the prompt by putting them in a double curly braces, e.g. {{variable_name}}.",
         )
         max_tokens: int | None = SchemaField(
             advanced=True,
@@ -220,10 +290,17 @@ class AIStructuredResponseGeneratorBlock(Block):
             description="The maximum number of tokens to generate in the chat completion.",
         )
 
+        ollama_host: str = SchemaField(
+            advanced=True,
+            default="localhost:11434",
+            description="Ollama host for local  models",
+        )
+
     class Output(BlockSchema):
         response: dict[str, Any] = SchemaField(
             description="The response object generated by the language model."
         )
+        prompt: str = SchemaField(description="The prompt sent to the language model.")
         error: str = SchemaField(description="Error message if the API call failed.")
 
     def __init__(self):
@@ -243,7 +320,10 @@ class AIStructuredResponseGeneratorBlock(Block):
                 "prompt": "User prompt",
             },
             test_credentials=TEST_CREDENTIALS,
-            test_output=("response", {"key1": "key1Value", "key2": "key2Value"}),
+            test_output=[
+                ("response", {"key1": "key1Value", "key2": "key2Value"}),
+                ("prompt", str),
+            ],
             test_mock={
                 "llm_call": lambda *args, **kwargs: (
                     json.dumps(
@@ -257,22 +337,25 @@ class AIStructuredResponseGeneratorBlock(Block):
                 )
             },
         )
+        self.prompt = ""
 
-    @staticmethod
     def llm_call(
+        self,
         credentials: APIKeyCredentials,
         llm_model: LlmModel,
         prompt: list[dict],
         json_format: bool,
-        max_tokens: int | None = None,
+        max_tokens: int | None,
+        ollama_host: str = "localhost:11434",
     ) -> tuple[str, int, int]:
         """
         Args:
-            api_key: API key for the LLM provider.
+            credentials: The API key credentials to use.
             llm_model: The LLM model to use.
             prompt: The prompt to send to the LLM.
             json_format: Whether the response should be in JSON format.
             max_tokens: The maximum number of tokens to generate in the chat completion.
+            ollama_host: The host for ollama to use
 
         Returns:
             The response from the LLM.
@@ -280,6 +363,7 @@ class AIStructuredResponseGeneratorBlock(Block):
             The number of tokens used in the completion.
         """
         provider = llm_model.metadata.provider
+        max_tokens = max_tokens or llm_model.max_output_tokens or 4096
 
         if provider == "openai":
             oai_client = openai.OpenAI(api_key=credentials.api_key.get_secret_value())
@@ -301,6 +385,7 @@ class AIStructuredResponseGeneratorBlock(Block):
                 response_format=response_format,  # type: ignore
                 max_completion_tokens=max_tokens,
             )
+            self.prompt = json.dumps(prompt)
 
             return (
                 response.choices[0].message.content or "",
@@ -328,8 +413,9 @@ class AIStructuredResponseGeneratorBlock(Block):
                     model=llm_model.value,
                     system=sysprompt,
                     messages=messages,
-                    max_tokens=max_tokens or 8192,
+                    max_tokens=max_tokens,
                 )
+                self.prompt = json.dumps(prompt)
 
                 if not resp.content:
                     raise ValueError("No content returned from Anthropic.")
@@ -356,19 +442,22 @@ class AIStructuredResponseGeneratorBlock(Block):
                 response_format=response_format,  # type: ignore
                 max_tokens=max_tokens,
             )
+            self.prompt = json.dumps(prompt)
             return (
                 response.choices[0].message.content or "",
                 response.usage.prompt_tokens if response.usage else 0,
                 response.usage.completion_tokens if response.usage else 0,
             )
         elif provider == "ollama":
+            client = ollama.Client(host=ollama_host)
             sys_messages = [p["content"] for p in prompt if p["role"] == "system"]
             usr_messages = [p["content"] for p in prompt if p["role"] != "system"]
-            response = ollama.generate(
+            response = client.generate(
                 model=llm_model.value,
                 prompt=f"{sys_messages}\n\n{usr_messages}",
                 stream=False,
             )
+            self.prompt = json.dumps(prompt)
             return (
                 response.get("response") or "",
                 response.get("prompt_eval_count") or 0,
@@ -389,6 +478,7 @@ class AIStructuredResponseGeneratorBlock(Block):
                 messages=prompt,  # type: ignore
                 max_tokens=max_tokens,
             )
+            self.prompt = json.dumps(prompt)
 
             # If there's no response, raise an error
             if not response.choices:
@@ -417,8 +507,8 @@ class AIStructuredResponseGeneratorBlock(Block):
 
         values = input_data.prompt_values
         if values:
-            input_data.prompt = input_data.prompt.format(**values)
-            input_data.sys_prompt = input_data.sys_prompt.format(**values)
+            input_data.prompt = fmt.format_string(input_data.prompt, values)
+            input_data.sys_prompt = fmt.format_string(input_data.sys_prompt, values)
 
         if input_data.sys_prompt:
             prompt.append({"role": "system", "content": input_data.sys_prompt})
@@ -464,6 +554,7 @@ class AIStructuredResponseGeneratorBlock(Block):
                     llm_model=llm_model,
                     prompt=prompt,
                     json_format=bool(input_data.expected_format),
+                    ollama_host=input_data.ollama_host,
                     max_tokens=input_data.max_tokens,
                 )
                 self.merge_stats(
@@ -487,9 +578,11 @@ class AIStructuredResponseGeneratorBlock(Block):
                             )
                             for k, v in parsed_dict.items()
                         }
+                        yield "prompt", self.prompt
                         return
                 else:
                     yield "response", {"response": response_text}
+                    yield "prompt", self.prompt
                     return
 
                 retry_prompt = trim_prompt(
@@ -520,7 +613,7 @@ class AIStructuredResponseGeneratorBlock(Block):
         raise RuntimeError(retry_prompt)
 
 
-class AITextGeneratorBlock(Block):
+class AITextGeneratorBlock(AIBlockBase):
     class Input(BlockSchema):
         prompt: str = SchemaField(
             description="The prompt to send to the language model. You can use any of the {keys} from Prompt Values to fill in the prompt with values from the prompt values dictionary by putting them in curly braces.",
@@ -544,7 +637,14 @@ class AITextGeneratorBlock(Block):
             description="Number of times to retry the LLM call if the response does not match the expected format.",
         )
         prompt_values: dict[str, str] = SchemaField(
-            advanced=False, default={}, description="Values used to fill in the prompt."
+            advanced=False,
+            default={},
+            description="Values used to fill in the prompt. The values can be used in the prompt by putting them in a double curly braces, e.g. {{variable_name}}.",
+        )
+        ollama_host: str = SchemaField(
+            advanced=True,
+            default="localhost:11434",
+            description="Ollama host for local  models",
         )
         max_tokens: int | None = SchemaField(
             advanced=True,
@@ -556,6 +656,7 @@ class AITextGeneratorBlock(Block):
         response: str = SchemaField(
             description="The response generated by the language model."
         )
+        prompt: str = SchemaField(description="The prompt sent to the language model.")
         error: str = SchemaField(description="Error message if the API call failed.")
 
     def __init__(self):
@@ -570,7 +671,10 @@ class AITextGeneratorBlock(Block):
                 "credentials": TEST_CREDENTIALS_INPUT,
             },
             test_credentials=TEST_CREDENTIALS,
-            test_output=("response", "Response text"),
+            test_output=[
+                ("response", "Response text"),
+                ("prompt", str),
+            ],
             test_mock={"llm_call": lambda *args, **kwargs: "Response text"},
         )
 
@@ -581,7 +685,7 @@ class AITextGeneratorBlock(Block):
     ) -> str:
         block = AIStructuredResponseGeneratorBlock()
         response = block.run_once(input_data, "response", credentials=credentials)
-        self.merge_stats(block.execution_stats)
+        self.merge_llm_stats(block)
         return response["response"]
 
     def run(
@@ -592,6 +696,7 @@ class AITextGeneratorBlock(Block):
             expected_format={},
         )
         yield "response", self.llm_call(object_input_data, credentials)
+        yield "prompt", self.prompt
 
 
 class SummaryStyle(Enum):
@@ -601,7 +706,7 @@ class SummaryStyle(Enum):
     NUMBERED_LIST = "numbered list"
 
 
-class AITextSummarizerBlock(Block):
+class AITextSummarizerBlock(AIBlockBase):
     class Input(BlockSchema):
         text: str = SchemaField(
             description="The text to summarize.",
@@ -636,9 +741,15 @@ class AITextSummarizerBlock(Block):
             description="The number of overlapping tokens between chunks to maintain context.",
             ge=0,
         )
+        ollama_host: str = SchemaField(
+            advanced=True,
+            default="localhost:11434",
+            description="Ollama host for local  models",
+        )
 
     class Output(BlockSchema):
         summary: str = SchemaField(description="The final summary of the text.")
+        prompt: str = SchemaField(description="The prompt sent to the language model.")
         error: str = SchemaField(description="Error message if the API call failed.")
 
     def __init__(self):
@@ -653,7 +764,10 @@ class AITextSummarizerBlock(Block):
                 "credentials": TEST_CREDENTIALS_INPUT,
             },
             test_credentials=TEST_CREDENTIALS,
-            test_output=("summary", "Final summary of a long text"),
+            test_output=[
+                ("summary", "Final summary of a long text"),
+                ("prompt", str),
+            ],
             test_mock={
                 "llm_call": lambda input_data, credentials: (
                     {"final_summary": "Final summary of a long text"}
@@ -681,6 +795,7 @@ class AITextSummarizerBlock(Block):
 
         final_summary = self._combine_summaries(summaries, input_data, credentials)
         yield "summary", final_summary
+        yield "prompt", self.prompt
 
     @staticmethod
     def _split_text(text: str, max_tokens: int, overlap: int) -> list[str]:
@@ -701,7 +816,7 @@ class AITextSummarizerBlock(Block):
     ) -> dict:
         block = AIStructuredResponseGeneratorBlock()
         response = block.run_once(input_data, "response", credentials=credentials)
-        self.merge_stats(block.execution_stats)
+        self.merge_llm_stats(block)
         return response
 
     def _summarize_chunk(
@@ -758,7 +873,7 @@ class AITextSummarizerBlock(Block):
             ]  # Get the first yielded value
 
 
-class AIConversationBlock(Block):
+class AIConversationBlock(AIBlockBase):
     class Input(BlockSchema):
         messages: List[Message] = SchemaField(
             description="List of messages in the conversation.", min_length=1
@@ -774,11 +889,17 @@ class AIConversationBlock(Block):
             default=None,
             description="The maximum number of tokens to generate in the chat completion.",
         )
+        ollama_host: str = SchemaField(
+            advanced=True,
+            default="localhost:11434",
+            description="Ollama host for local  models",
+        )
 
     class Output(BlockSchema):
         response: str = SchemaField(
             description="The model's response to the conversation."
         )
+        prompt: str = SchemaField(description="The prompt sent to the language model.")
         error: str = SchemaField(description="Error message if the API call failed.")
 
     def __init__(self):
@@ -802,10 +923,13 @@ class AIConversationBlock(Block):
                 "credentials": TEST_CREDENTIALS_INPUT,
             },
             test_credentials=TEST_CREDENTIALS,
-            test_output=(
-                "response",
-                "The 2020 World Series was played at Globe Life Field in Arlington, Texas.",
-            ),
+            test_output=[
+                (
+                    "response",
+                    "The 2020 World Series was played at Globe Life Field in Arlington, Texas.",
+                ),
+                ("prompt", str),
+            ],
             test_mock={
                 "llm_call": lambda *args, **kwargs: "The 2020 World Series was played at Globe Life Field in Arlington, Texas."
             },
@@ -818,7 +942,7 @@ class AIConversationBlock(Block):
     ) -> str:
         block = AIStructuredResponseGeneratorBlock()
         response = block.run_once(input_data, "response", credentials=credentials)
-        self.merge_stats(block.execution_stats)
+        self.merge_llm_stats(block)
         return response["response"]
 
     def run(
@@ -832,14 +956,16 @@ class AIConversationBlock(Block):
                 conversation_history=input_data.messages,
                 max_tokens=input_data.max_tokens,
                 expected_format={},
+                ollama_host=input_data.ollama_host,
             ),
             credentials=credentials,
         )
 
         yield "response", response
+        yield "prompt", self.prompt
 
 
-class AIListGeneratorBlock(Block):
+class AIListGeneratorBlock(AIBlockBase):
     class Input(BlockSchema):
         focus: str | None = SchemaField(
             description="The focus of the list to generate.",
@@ -871,12 +997,18 @@ class AIListGeneratorBlock(Block):
             default=None,
             description="The maximum number of tokens to generate in the chat completion.",
         )
+        ollama_host: str = SchemaField(
+            advanced=True,
+            default="localhost:11434",
+            description="Ollama host for local  models",
+        )
 
     class Output(BlockSchema):
         generated_list: List[str] = SchemaField(description="The generated list.")
         list_item: str = SchemaField(
             description="Each individual item in the list.",
         )
+        prompt: str = SchemaField(description="The prompt sent to the language model.")
         error: str = SchemaField(
             description="Error message if the list generation failed."
         )
@@ -908,6 +1040,7 @@ class AIListGeneratorBlock(Block):
                     "generated_list",
                     ["Zylora Prime", "Kharon-9", "Vortexia", "Oceara", "Draknos"],
                 ),
+                ("prompt", str),
                 ("list_item", "Zylora Prime"),
                 ("list_item", "Kharon-9"),
                 ("list_item", "Vortexia"),
@@ -921,13 +1054,14 @@ class AIListGeneratorBlock(Block):
             },
         )
 
-    @staticmethod
     def llm_call(
+        self,
         input_data: AIStructuredResponseGeneratorBlock.Input,
         credentials: APIKeyCredentials,
     ) -> dict[str, str]:
         llm_block = AIStructuredResponseGeneratorBlock()
         response = llm_block.run_once(input_data, "response", credentials=credentials)
+        self.merge_llm_stats(llm_block)
         return response
 
     @staticmethod
@@ -1022,6 +1156,7 @@ class AIListGeneratorBlock(Block):
                         credentials=input_data.credentials,
                         model=input_data.model,
                         expected_format={},  # Do not use structured response
+                        ollama_host=input_data.ollama_host,
                     ),
                     credentials=credentials,
                 )
@@ -1040,6 +1175,7 @@ class AIListGeneratorBlock(Block):
                 # If we reach here, we have a valid Python list
                 logger.debug("Successfully generated a valid Python list")
                 yield "generated_list", parsed_list
+                yield "prompt", self.prompt
 
                 # Yield each item in the list
                 for item in parsed_list:

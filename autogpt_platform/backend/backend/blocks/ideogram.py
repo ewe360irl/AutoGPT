@@ -11,6 +11,7 @@ from backend.data.model import (
     CredentialsMetaInput,
     SchemaField,
 )
+from backend.integrations.providers import ProviderName
 from backend.util.request import requests
 
 TEST_CREDENTIALS = APIKeyCredentials(
@@ -83,13 +84,10 @@ class UpscaleOption(str, Enum):
 
 class IdeogramModelBlock(Block):
     class Input(BlockSchema):
-
-        credentials: CredentialsMetaInput[Literal["ideogram"], Literal["api_key"]] = (
-            CredentialsField(
-                provider="ideogram",
-                supported_credential_types={"api_key"},
-                description="The Ideogram integration can be used with any API key with sufficient permissions for the blocks it is used on.",
-            )
+        credentials: CredentialsMetaInput[
+            Literal[ProviderName.IDEOGRAM], Literal["api_key"]
+        ] = CredentialsField(
+            description="The Ideogram integration can be used with any API key with sufficient permissions for the blocks it is used on.",
         )
         prompt: str = SchemaField(
             description="Text prompt for image generation",
@@ -153,7 +151,7 @@ class IdeogramModelBlock(Block):
         super().__init__(
             id="6ab085e2-20b3-4055-bc3e-08036e01eca6",
             description="This block runs Ideogram models with both simple and advanced settings.",
-            categories={BlockCategory.AI},
+            categories={BlockCategory.AI, BlockCategory.MULTIMEDIA},
             input_schema=IdeogramModelBlock.Input,
             output_schema=IdeogramModelBlock.Output,
             test_input={
