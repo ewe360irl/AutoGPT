@@ -3178,8 +3178,8 @@ python-dateutil = ">=2.5.3"
 tqdm = ">=4.64.1"
 typing-extensions = ">=3.7.4"
 urllib3 = [
-    {version = ">=1.26.0", markers = "python_version >= \"3.8\" and python_version < \"3.12\""},
     {version = ">=1.26.5", markers = "python_version >= \"3.12\" and python_version < \"4.0\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.8\" and python_version < \"3.12\""},
 ]
 
 [package.extras]
